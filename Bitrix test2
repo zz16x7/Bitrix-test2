@@ -73,7 +73,7 @@ def _run_tests() -> None:
         if status == "FAIL":
             print(f"         ожидалось: {expected}")
 
-    print("\nИтог:", "все тесты пройдены ✅" if all_ok else "есть расхождения ❌")
+    print("\nИтог:", "все тесты пройдены " if all_ok else "есть расхождения ")
 
 
 if __name__ == "__main__":
