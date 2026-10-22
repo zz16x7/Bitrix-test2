@@ -1,0 +1,200 @@
+import re
+from datetime import date
+
+
+# ---------- Вспомогательные проверки ----------
+
+def luhn_check(number: str) -> bool:
+    """Проверка номера карты алгоритмом Луна."""
+    digits = [int(c) for c in number]
+    checksum = 0
+    parity = len(digits) % 2
+    for i, d in enumerate(digits):
+        if i % 2 == parity:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+
+def is_amex_number(number: str) -> bool:
+    """American Express: 15 цифр, префикс 34 или 37."""
+    return len(number) == 15 and number[:2] in ("34", "37")
+
+
+# ---------- Валидаторы полей ----------
+
+def validate_card_number(raw):
+    if not isinstance(raw, str):
+        return False, "Неверный номер карты (ожидается строка)"
+    clean = re.sub(r"\s+", "", raw)
+    if not clean or not clean.isdigit():
+        return False, "Неверный номер карты (содержит нецифровые символы)"
+    if not (13 <= len(clean) <= 19):
+        return False, "Неверный номер карты (длина 13-19 цифр)"
+    if not luhn_check(clean):
+        return False, "Неверный номер карты (алгоритм Луна)"
+    return True, clean
+
+
+def validate_expiry(raw):
+    if not isinstance(raw, str):
+        return False, "Неверный срок действия (ожидается строка)"
+    m = re.fullmatch(r"\s*(\d{1,2})\s*/\s*(\d{2,4})\s*", raw)
+    if not m:
+        return False, "Неверный срок действия (формат MM/YY или MM/YYYY)"
+    month = int(m.group(1))
+    year = int(m.group(2))
+    if year < 100:
+        year += 2000
+    if not (1 <= month <= 12):
+        return False, "Неверный срок действия (месяц 01-12)"
+
+    today = date.today()
+    if (year, month) < (today.year, today.month):
+        return False, "Срок действия карты истёк"
+    if (year, month) > (today.year + 10, today.month):
+        return False, "Срок действия карты более 10 лет от текущей даты"
+    return True, None
+
+
+def validate_cvv(raw, raw_number):
+    if not isinstance(raw, str) or not raw.isdigit():
+        return False, "Неверный CVV (только цифры)"
+    clean_num = re.sub(r"\s+", "", raw_number) if isinstance(raw_number, str) else ""
+    if is_amex_number(clean_num):
+        if len(raw) != 4:
+            return False, "Неверный CVV (для American Express — 4 цифры)"
+    else:
+        if not (3 <= len(raw) <= 4):
+            return False, "Неверный CVV (должен быть 3-4 цифры)"
+    return True, None
+
+
+def validate_name(raw):
+    if not isinstance(raw, str):
+        return False, "Неверное имя держателя (ожидается строка)"
+    stripped = raw.strip()
+    if not (2 <= len(stripped) <= 26):
+        return False, "Неверное имя держателя (длина 2-26 символов)"
+    if not re.fullmatch(r"[A-Za-z ]+", stripped):
+        return False, "Неверное имя держателя (только латинские буквы и пробелы)"
+    if not re.search(r"[A-Za-z]", stripped):
+        return False, "Неверное имя держателя (должно содержать хотя бы одну букву)"
+    return True, None
+
+
+# ---------- Главная функция ----------
+
+def validate_card(number, expiry, cvv, name) -> str:
+    """Возвращает 'Карта валидна' либо перечень причин отказа через '; '."""
+    errors = []
+
+    ok, err = validate_card_number(number)
+    if not ok:
+        errors.append(err)
+
+    ok, err = validate_expiry(expiry)
+    if not ok:
+        errors.append(err)
+
+    ok, err = validate_cvv(cvv, number)
+    if not ok:
+        errors.append(err)
+
+    ok, err = validate_name(name)
+    if not ok:
+        errors.append(err)
+
+    return "Карта валидна" if not errors else "; ".join(errors)
+
+
+# ---------- Тесты ----------
+
+def _expiry(months_ahead: int) -> str:
+    """Возвращает 'MM/YY' для даты через N месяцев от сегодня (может быть < 0)."""
+    d = date.today()
+    total = d.year * 12 + (d.month - 1) + months_ahead
+    y, m = divmod(total, 12)
+    return f"{m + 1:02d}/{y % 100:02d}"
+
+
+if __name__ == "__main__":
+    valid_ex = _expiry(12)         # через год — валидно
+    expired_ex = _expiry(-1)       # месяц назад — просрочено
+    too_far_ex = _expiry(11 * 12)  # через 11 лет — слишком далеко
+
+    tests = [
+        # Пример из задачи: валидная карта
+        ("4532015112830366", valid_ex, "123", "JOHN DOE", "Карта валидна"),
+        # Пример из задачи: неверная контрольная сумма
+        ("4532015112830367", valid_ex, "123", "JOHN DOE", "Неверный номер карты (алгоритм Луна)"),
+        # Номер с пробелами
+        ("4532 0151 1283 0366", valid_ex, "123", "JOHN DOE", "Карта валидна"),
+        # American Express, CVV 4 цифры — ок
+        ("378282246310005", valid_ex, "1234", "JOHN DOE", "Карта валидна"),
+        # American Express, CVV 3 цифры — ошибка
+        ("378282246310005", valid_ex, "123", "JOHN DOE",
+         "Неверный CVV (для American Express — 4 цифры)"),
+        # Просроченная карта
+        ("4532015112830366", expired_ex, "123", "JOHN DOE",
+         "Срок действия карты истёк"),
+        # Слишком далеко в будущем
+        ("4532015112830366", too_far_ex, "123", "JOHN DOE",
+         "Срок действия карты более 10 лет от текущей даты"),
+        # Несуществующий месяц
+        ("4532015112830366", "13/28", "123", "JOHN DOE",
+         "Неверный срок действия (месяц 01-12)"),
+        # CVV слишком короткий
+        ("4532015112830366", valid_ex, "12", "JOHN DOE",
+         "Неверный CVV (должен быть 3-4 цифры)"),
+        # CVV слишком длинный
+        ("4532015112830366", valid_ex, "12345", "JOHN DOE",
+         "Неверный CVV (должен быть 3-4 цифры)"),
+        # Кириллица в имени
+        ("4532015112830366", valid_ex, "123", "ИВАН ИВАНОВ",
+         "Неверное имя держателя (только латинские буквы и пробелы)"),
+        # Имя из одной буквы
+        ("4532015112830366", valid_ex, "123", "J",
+         "Неверное имя держателя (длина 2-26 символов)"),
+        # Номер слишком короткий
+        ("1234", valid_ex, "123", "JOHN DOE",
+         "Неверный номер карты (длина 13-19 цифр)"),
+        # Цифры в имени
+        ("4532015112830366", valid_ex, "123", "JOHN123 DOE",
+         "Неверное имя держателя (только латинские буквы и пробелы)"),
+        # Несколько ошибок сразу
+        ("1234", expired_ex, "1", "J",
+         "Неверный номер карты (длина 13-19 цифр); "
+         "Срок действия карты истёк; "
+         "Неверный CVV (должен быть 3-4 цифры); "
+         "Неверное имя держателя (длина 2-26 символов)"),
+    ]
+
+    print("=== Тесты ===")
+    all_ok = True
+    for number, expiry, cvv, name, expected in tests:
+        actual = validate_card(number, expiry, cvv, name)
+        status = "OK" if actual == expected else "FAIL"
+        if status == "FAIL":
+            all_ok = False
+        print(f"[{status}] {number!r} | {expiry!r} | {cvv!r} | {name!r}")
+        print(f"        -> {actual}")
+        if status == "FAIL":
+            print(f"        ожидалось: {expected}")
+
+    print()
+    print("Итог:", "все тесты пройдены " if all_ok else "есть расхождения ")
+
+    # Интерактивный режим
+    print("\nВведите данные карты (пустой номер — выход):")
+    while True:
+        number = input("Номер карты: ")
+        if not number:
+            break
+        expiry = input("Срок действия (MM/YY): ")
+        cvv = input("CVV: ")
+        name = input("Имя держателя: ")
+        print("Результат:", validate_card(number, expiry, cvv, name))
+        print()
