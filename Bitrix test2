@@ -1,0 +1,87 @@
+SPECIAL_CHARS = set("!@#$%^&*")
+
+
+def check_password(password: str) -> str:
+    """Проверяет пароль и возвращает уровень надёжности или причину отказа."""
+    reasons = []
+
+    # Проверка длины
+    if len(password) < 8:
+        reasons.append("длина меньше 8 символов")
+
+    # Проверка наличия заглавной латинской буквы (A-Z)
+    if not any('A' <= c <= 'Z' for c in password):
+        reasons.append("нет заглавных букв")
+
+    # Проверка наличия строчной латинской буквы (a-z)
+    if not any('a' <= c <= 'z' for c in password):
+        reasons.append("нет строчных букв")
+
+    # Проверка наличия цифры (0-9)
+    if not any('0' <= c <= '9' for c in password):
+        reasons.append("нет цифр")
+
+    # Проверка наличия спецсимвола (!@#$%^&*)
+    if not any(c in SPECIAL_CHARS for c in password):
+        reasons.append("нет спецсимволов")
+
+    # Если есть хотя бы одна причина — пароль не соответствует
+    if reasons:
+        return "не соответствует требованиям (" + ", ".join(reasons) + ")"
+
+    # Определяем уровень надёжности по длине
+    length = len(password)
+    if 8 <= length <= 10:
+        return "слабый"
+    elif 11 <= length <= 15:
+        return "средний"
+    else:  # 16+
+        return "сильный"
+
+
+def _run_tests() -> None:
+    """Прогоняет тестовые примеры и печатает результат."""
+    test_cases = [
+        # (пароль, ожидаемый результат)
+        ("Password123!",      "средний"),
+        ("password",          "не соответствует требованиям (нет заглавных букв, нет цифр, нет спецсимволов)"),
+        ("Pass1!",            "не соответствует требованиям (длина меньше 8 символов)"),
+        ("Abcdefg1!",         "слабый"),           # 10 символов
+        ("Abcdefghij1!",      "средний"),          # 12 символов
+        ("Abcdefghijklmn1!",  "сильный"),          # 16 символов
+        # Граничные случаи
+        ("Aa1!aaa",           "не соответствует требованиям (длина меньше 8 символов)"),  # 7
+        ("Aa1!aaaa",          "слабый"),           # 8  — нижняя граница
+        ("Aa1!aaaaaaa",       "слабый"),           # 10 — верхняя граница «слабого»
+        ("Aa1!aaaaaaaa",      "средний"),          # 11 — нижняя граница «среднего»
+        ("Aa1!aaaaaaaaaaa",   "средний"),          # 15 — верхняя граница «среднего»
+        ("Aa1!aaaaaaaaaaaa",  "сильный"),          # 16 — нижняя граница «сильного»
+        # Unicode / кириллица не должны считаться буквами
+        ("Пароль123!",        "не соответствует требованиям (нет заглавных букв, нет строчных букв)"),
+        # Пробелы и табуляция — не спецсимволы
+        ("Aa1 aaaa",          "не соответствует требованиям (нет спецсимволов)"),
+    ]
+
+    print("=== Тесты ===")
+    all_ok = True
+    for pwd, expected in test_cases:
+        actual = check_password(pwd)
+        status = "OK" if actual == expected else "FAIL"
+        if status == "FAIL":
+            all_ok = False
+        print(f"[{status}] {pwd!r:22} -> {actual}")
+        if status == "FAIL":
+            print(f"         ожидалось: {expected}")
+
+    print("\nИтог:", "все тесты пройдены ✅" if all_ok else "есть расхождения ❌")
+
+
+if __name__ == "__main__":
+    _run_tests()
+
+    print("\nВведите пароль для проверки (пустая строка — выход):")
+    while True:
+        user_input = input("Пароль: ")
+        if user_input == "":
+            break
+        print("Результат:", check_password(user_input))
